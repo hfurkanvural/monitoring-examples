@@ -1,0 +1,79 @@
+version: '3'
+
+networks:
+  hfv-monitoring:
+
+services:
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    ports:
+      - "9090:9090"
+    networks:
+      - hfv-monitoring
+  
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=hfvadmin
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    networks:
+      - hfv-monitoring
+  
+  sqlagent:
+    image: dbhi/sql-agent
+    links:
+      - mysql:mysql
+    depends_on:
+      - mysql
+    networks:
+      - hfv-monitoring
+  
+  prometheus-sql:
+    image: dbhi/prometheus-sql
+    links:
+      - sqlagent:sqlagent
+    depends_on:
+      - sqlagent
+    ports:
+      - 8080:8080
+    command:
+      - -config
+      - /config.yml
+      - -service
+      - http://sqlagent:5000
+    # Specify where the queries file is mounted on the host.
+    volumes:
+        - ${PWD}/config.yml:/config.yml
+        - ${PWD}/queries.yml:/queries.yml
+    networks:
+      - hfv-monitoring
+
+  mysql:
+    image: mysql:8
+    volumes:
+        - ${PWD}/:/docker-entrypoint-initdb.d/
+    environment:
+        MYSQL_ROOT_PASSWORD: unsecure
+        MYSQL_USER: test
+        MYSQL_PASSWORD: unsecure
+        MYSQL_DATABASE: test
+    networks:
+      - hfv-monitoring
+
+  adminer:
+    image: adminer
+    container_name: adminer
+    restart: always
+    ports:
+      - "8100:8080"
+    networks:
+      - hfv-monitoring
